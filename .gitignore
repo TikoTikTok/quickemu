@@ -16,8 +16,7 @@
 *.sock
 *.xml
 *.zs-old
-.gitpod.yml
-.gitpod.Dockerfile
 ubuntu-mate-impish.conf
 qemu/*
 ubuntu-mate-impish/*
+\qemu

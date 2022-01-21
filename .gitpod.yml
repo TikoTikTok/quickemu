@@ -10,7 +10,7 @@ tasks:
             ./quickget ubuntu-mate impish
             
   
-  - name: qemu builder [QEMU BUILD] &
+  - name: qemu builder [QEMU BUILD] |
     before: git clone https://gitlab.com/qemu-project/qemu.git
     command: mkdir /workspace/quickemu/qemu/build &&
              cd /workspace/quickemu/qemu/build && 
