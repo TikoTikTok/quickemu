@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 export LC_ALL=C
 
-if ((BASH_VERSINFO[0] < 4))
-then
+if ((BASH_VERSINFO[0] < 4)); then
   echo "Sorry, you need bash 4.0 or newer to run this script."
   exit 1
 fi
@@ -228,6 +227,7 @@ function vm_boot() {
   local KERNEL_NODE=""
   local KERNEL_VER="?"
   local LSB_DESCRIPTION="Unknown OS"
+  local MACHINE_TYPE="q35"
   local MAC_BOOTLOADER=""
   local MAC_MISSING=""
   local MAC_DISK_DEV="ide-hd,bus=ahci.2"
@@ -327,8 +327,8 @@ function vm_boot() {
   fi
   echo ", ${RAM_VM} RAM"
 
-  if [ "${RAM_VM//G/}" -lt 4 ]; then
-    if [ "${guest_os}" == "macos" ] || [ "${guest_os}" == "windows" ]; then
+  if [ "${guest_os}" == "macos" ] || [ "${guest_os}" == "windows" ]; then
+    if [ "${RAM_VM//G/}" -lt 4 ]; then
         echo "ERROR! You have insufficient RAM to run ${guest_os} in a VM"
         exit 1
     fi
@@ -383,7 +383,7 @@ function vm_boot() {
     # https://bugzilla.redhat.com/show_bug.cgi?id=1929357#c5
     case ${secureboot} in
       on)
-        if [ -e "/usr/share/OVMF/OVMF_CODE_4M.secboot.fd" ]; then
+         if [ -e "/usr/share/OVMF/OVMF_CODE_4M.secboot.fd" ]; then
           EFI_CODE="/usr/share/OVMF/OVMF_CODE_4M.secboot.fd"
           efi_vars "/usr/share/OVMF/OVMF_VARS_4M.fd" "${EFI_VARS}"
         elif [ -e "/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd" ]; then
@@ -392,9 +392,15 @@ function vm_boot() {
         elif [ -e "/usr/share/OVMF/x64/OVMF_CODE.secboot.fd" ]; then
           EFI_CODE="/usr/share/OVMF/x64/OVMF_CODE.secboot.fd"
           efi_vars "/usr/share/OVMF/x64/OVMF_VARS.fd" "${EFI_VARS}"
-        elif [ -e "/usr/share/edk2-ovmf/OVMF_CODE.fd" ]; then
+        elif [ -e "/usr/share/edk2-ovmf/OVMF_CODE.secboot.fd" ]; then
 	        EFI_CODE="/usr/share/edk2-ovmf/OVMF_CODE.secboot.fd"
 	        efi_vars "/usr/share/edk2-ovmf/OVMF_VARS.fd" "${EFI_VARS}"
+        elif [ -e "/usr/share/qemu/ovmf-x86_64-smm-ms-code.bin" ]; then
+          EFI_CODE="/usr/share/qemu/ovmf-x86_64-smm-ms-code.bin"
+          efi_vars "/usr/share/qemu/ovmf-x86_64-smm-ms-vars.bin" "${EFI_VARS}"
+        elif [ -e "/usr/share/qemu/edk2-x86_64-secure-code.fd" ]; then
+          EFI_CODE="/usr/share/qemu/edk2-x86_64-secure-code.fd"
+          efi_vars "/usr/share/qemu/edk2-x86_64-code.fd" "${EFI_VARS}"
         else
           echo "ERROR! SecureBoot was requested but no SecureBoot capable firmware was found."
           echo "       Please install OVMF firmware."
@@ -415,8 +421,14 @@ function vm_boot() {
           EFI_CODE="/usr/share/OVMF/x64/OVMF_CODE.fd"
           efi_vars "/usr/share/OVMF/x64/OVMF_VARS.fd" "${EFI_VARS}"
         elif [ -e "/usr/share/edk2-ovmf/OVMF_CODE.fd" ]; then
-	        EFI_CODE="/usr/share/edk2-ovmf/OVMF_CODE.fd"
-	        efi_vars "/usr/share/edk2-ovmf/OVMF_VARS.fd" "${EFI_VARS}"
+          EFI_CODE="/usr/share/edk2-ovmf/OVMF_CODE.fd"
+          efi_vars "/usr/share/edk2-ovmf/OVMF_VARS.fd" "${EFI_VARS}"
+        elif [ -e "/usr/share/qemu/ovmf-x86_64-4m-code.bin" ]; then
+          EFI_CODE="/usr/share/qemu/ovmf-x86_64-4m-code.bin"
+          efi_vars "/usr/share/qemu/ovmf-x86_64-4m-vars.bin" "${EFI_VARS}"
+        elif [ -e "/usr/share/qemu/edk2-x86_64-code.fd" ]; then
+          EFI_CODE="/usr/share/qemu/edk2-x86_64-code.fd"
+          efi_vars "/usr/share/qemu/edk2-x86_64-code.fd" "${EFI_VARS}"
         else
           echo "ERROR! EFI boot requested but no EFI firmware found."
           echo "       Please install OVMF firmware."
@@ -451,17 +463,36 @@ function vm_boot() {
 
   # Make any OS specific adjustments
   case ${guest_os} in
-    freebsd|linux|openbsd)
+    *bsd|haiku|freedos|linux)
       CPU="-cpu host,kvm=on"
       if [ "${HOST_CPU_VENDOR}" == "AuthenticAMD" ]; then
         CPU="${CPU},topoext"
       fi
-      if [ "${guest_os}" == "freebsd" ]; then
+
+      if [ "${guest_os}" == "freebsd" ] || [ "${guest_os}" == "ghostbsd" ]; then
         MOUSE="usb-mouse"
+      elif [ "${guest_os}" == "haiku" ] || [ "${guest_os}" == "freedos" ]; then
+        MACHINE_TYPE="pc"
+        NET_DEVICE="rtl8139"
       fi
+
+      if [ "${guest_os}" == "freedos" ] ; then
+        # fix for #382
+        SMM="on"
+      fi
+
+
       if [ -z "${disk_size}" ]; then
         disk_size="16G"
       fi
+      ;;
+    kolibrios)
+      CPU="-cpu qemu32,kvm=on"
+      if [ "${HOST_CPU_VENDOR}" == "AuthenticAMD" ]; then
+        CPU="${CPU},topoext"
+      fi
+      MACHINE_TYPE="pc"
+      NET_DEVICE="rtl8139"
       ;;
     macos)
       #https://www.nicksherlock.com/2020/06/installing-macos-big-sur-on-proxmox/
@@ -591,7 +622,7 @@ function vm_boot() {
     fi
   fi
 
-  if [ "${DISK_USED}" == "yes" ]; then
+  if [ "${DISK_USED}" == "yes" ] && [ "${guest_os}" != "kolibrios" ]; then
     # If there is a disk image that appears to be used do not boot from installation media.
     iso=""
     img=""
@@ -621,7 +652,7 @@ function vm_boot() {
 
   # Setup the appropriate audio device based on the display output
   case ${OUTPUT} in
-    spice|spice-app|none) AUDIO_DEV="spice,id=audio0,out.mixing-engine=off";;
+    spice|spice-app|none) AUDIO_DEV="spice,id=audio0";;
     *) AUDIO_DEV="pa,id=audio0,out.mixing-engine=off,out.stream-name=${LAUNCHER}-${VMNAME},in.stream-name=${LAUNCHER}-${VMNAME}";;
   esac
 
@@ -833,7 +864,7 @@ function vm_boot() {
 
   # shellcheck disable=SC2054,SC2206,SC2140
   args+=(-name ${VMNAME},process=${VMNAME} -pidfile "${VMDIR}/${VMNAME}.pid"
-         -enable-kvm -machine q35,smm=${SMM},vmport=off ${GUEST_TWEAKS}
+         -enable-kvm -machine ${MACHINE_TYPE},smm=${SMM},vmport=off ${GUEST_TWEAKS}
          ${CPU} ${SMP}
          -m ${RAM_VM} ${BALLOON}
          -smbios type=2,manufacturer="Quickemu Project",product="Quickemu",version="${VERSION}",serial="0xDEADBEEF",location="quickemu.com",asset="${VMNAME}"
@@ -868,6 +899,13 @@ function vm_boot() {
          -monitor none
          -serial mon:stdio)
 
+  # FIXME: Check for device availability. qemu will fail to start otherwise
+  if [ -n "${BRAILLE}" ]; then
+      # shellcheck disable=SC2054
+      args+=(-chardev braille,id=brltty
+             -device usb-braille,id=usbbrl,chardev=brltty)
+  fi
+
   if [ -n "${bridge}" ]; then
     # Enable bridge mode networking
     # shellcheck disable=SC2054,SC2206
@@ -901,8 +939,17 @@ function vm_boot() {
     args+=(-drive media=cdrom,index=1,file="${fixed_iso}")
   fi
 
-  # Attach the unattended configuration to Windows guests when booting from ISO
-  if [ -n "${iso}" ] && [ "${guest_os}" == "windows" ] && [ -e "${VMDIR}/unattended.iso" ]; then
+  if [ -n "${iso}" ] && [ "${guest_os}" == "freedos" ]; then
+    # FreeDOS reboots after partitioning the disk, and QEMU tries to boot from disk after first restart
+    # This flag sets the boot order to cdrom,disk. It will persist until powering down the VM
+    args+=(-boot order=dc)
+  elif [ -n "${iso}" ] && [ "${guest_os}" == "kolibrios" ]; then
+    # Since there is bug (probably) in KolibriOS: cdrom indexes 0 or 1 make system show an extra unexisting iso, so we use index=2
+    # shellcheck disable=SC2054
+    args+=(-drive media=cdrom,index=2,file="${iso}")
+    iso=""
+  elif [ -n "${iso}" ] && [ "${guest_os}" == "windows" ] && [ -e "${VMDIR}/unattended.iso" ]; then
+    # Attach the unattended configuration to Windows guests when booting from ISO
     # shellcheck disable=SC2054
     args+=(-drive media=cdrom,index=2,file="${VMDIR}/unattended.iso")
   fi
@@ -921,6 +968,11 @@ function vm_boot() {
 
     # shellcheck disable=SC2054,SC2206
     args+=(-device ${MAC_DISK_DEV},drive=SystemDisk
+           -drive id=SystemDisk,if=none,format=qcow2,file="${disk_img}" ${STATUS_QUO})
+  elif [ "${guest_os}" == "kolibrios" ]; then
+    # shellcheck disable=SC2054,SC2206
+    args+=(-device ahci,id=ahci
+           -device ide-hd,bus=ahci.0,drive=SystemDisk
            -drive id=SystemDisk,if=none,format=qcow2,file="${disk_img}" ${STATUS_QUO})
   else
     # shellcheck disable=SC2054,SC2206
@@ -949,11 +1001,15 @@ function vm_boot() {
             -device tpm-tis,tpmdev=tpm0)
   fi
 
+  if [ -n "${extra_args}" ]; then
+      args+=("${extra_args}")
+  fi
+
   # The OSK parameter contains parenthesis, they need to be escaped in the shell
   # scripts. The vendor name, Quickemu Project, contains a space. It needs to be
   # double-quoted.
   SHELL_ARGS="${args[*]}"
-  SHELL_ARGS="${SHELL_ARGS//(/\\(}"
+  SHELL_ARGS="${SHELL_ARGS//\(/\\(}"
   SHELL_ARGS="${SHELL_ARGS//)/\\)}"
   SHELL_ARGS="${SHELL_ARGS//Quickemu Project/\"Quickemu Project\"}"
 
@@ -976,8 +1032,8 @@ function shortcut_create {
   local dirname="${HOME}/.local/share/applications"
   local filename="${HOME}/.local/share/applications/${VMNAME}.desktop"
 
-  if [ ! -d ${dirname} ]; then
-    mkdir -p ${dirname}
+  if [ ! -d "${dirname}" ]; then
+    mkdir -p "${dirname}"
   fi
   cat << EOF > "${filename}"
 [Desktop Entry]
@@ -998,6 +1054,7 @@ function usage() {
   echo "  ${LAUNCHER} --vm ubuntu.conf"
   echo
   echo "You can also pass optional parameters"
+  echo "  --braille               : Enable braille support. Requires SDL."
   echo "  --delete-disk           : Delete the disk image and EFI variables"
   echo "  --delete-vm             : Delete the entire VM and it's configuration"
   echo "  --display               : Select display backend. 'sdl' (default), 'gtk', 'none', or 'spice'"
@@ -1030,6 +1087,7 @@ bridge=""
 cpu_cores=""
 disk_img=""
 disk_size=""
+extra_args=""
 fixed_iso=""
 floppy=""
 guest_os="linux"
@@ -1043,6 +1101,7 @@ secureboot="off"
 tpm="off"
 usb_devices=()
 
+BRAILLE=""
 DELETE_DISK=0
 DELETE_VM=0
 FULLSCREEN=""
@@ -1062,9 +1121,10 @@ VMDIR=""
 VMNAME=""
 VMPATH=""
 
+# shellcheck disable=SC2155
 readonly LAUNCHER=$(basename "${0}")
 readonly DISK_MIN_SIZE=$((197632 * 8))
-readonly VERSION="3.11"
+readonly VERSION="3.14"
 
 # PUBLICSHARE is the only directory exposed to guest VMs for file
 # sharing via 9P, spice-webdavd and Samba. This path is not configurable.
@@ -1085,7 +1145,7 @@ fi
 # TODO: Make this run the native architecture binary
 QEMU=$(command -v qemu-system-x86_64)
 QEMU_IMG=$(command -v qemu-img)
-if [ ! -e "${QEMU}" ] && [ ! -e "${QEMU_IMG}" ]; then
+if [ ! -e "${QEMU}" ] || [ ! -e "${QEMU_IMG}" ]; then
   echo "ERROR! QEMU not found. Please make install qemu-system-x86_64 and qemu-img"
   exit 1
 fi
@@ -1104,6 +1164,9 @@ if [ $# -lt 1 ]; then
 else
     while [ $# -gt 0 ]; do
         case "${1}" in
+          -braille|--braille)
+            BRAILLE="on"
+            shift;;
           -delete|--delete|-delete-disk|--delete-disk)
             DELETE_DISK=1
             shift;;
@@ -1189,7 +1252,10 @@ if [ -n "${VM}" ] && [ -e "${VM}" ]; then
   fi
 
   if [ -z "${OUTPUT}" ]; then
-    if [ -z "${display}" ]; then
+    # Braille support requires SDL. Override OUTPUT if braille was requested.
+    if [ -n "${BRAILLE}" ]; then
+      OUTPUT="sdl"
+    elif [ -z "${display}" ]; then
       OUTPUT="sdl"
     else
       OUTPUT="${display}"
@@ -1248,3 +1314,5 @@ if [ ${SHORTCUT} -eq 1 ]; then
 fi
 
 vm_boot
+
+# vim:tabstop=2:shiftwidth=2:expandtab
